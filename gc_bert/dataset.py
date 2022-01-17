@@ -3,6 +3,7 @@ import json
 import pandas as pd
 import networkx as nx
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 
 from gc_bert.utils import to_torch_sparse
@@ -11,7 +12,9 @@ from gc_bert.utils import to_torch_sparse
 class PubmedDataset(Dataset):
     
     def __init__(self, data_path, citation_path, transform=None, target_transform=None):
+        self.labels = None
         self.articles = None
+        self.texts = None
         self.citations = None
         self.G = None
         self.adj = None
@@ -55,13 +58,16 @@ class PubmedDataset(Dataset):
             self.articles = pd.DataFrame(json.load(f))
         self.citations = pd.read_csv(self.citation_path)
         self.clean_data()
-        self.labels = self.articles.label.tolist()
+        self.texts = self.articles.abstract.tolist()
+        self.labels = torch.tensor(self.articles.label.tolist())
         
     def __len__(self):
         return len(self.articles)
 
     def __getitem__(self, idx):
-        text, label = self.articles.loc[idx, ['abstract', 'label']]
+#         text, label = self.articles.loc[idx, ['abstract', 'label']]
+        text = self.texts[idx]
+        label = self.labels[idx]
         if self.transform:
             text = self.transform(text)
         if self.target_transform:
@@ -86,5 +92,4 @@ class PubmedDataset(Dataset):
         )
         self.adj = to_torch_sparse(self.adj)
         return self.adj
-    
-    
+

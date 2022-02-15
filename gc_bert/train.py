@@ -46,7 +46,7 @@ def accuracy(output, labels):
     return correct / len(labels)
 
 
-def train_gcn(model, dataset, epochs=1000):
+def train_gcn(model, dataset, epochs=100):
     
     labels = dataset.labels
     adj = dataset.create_adj_matrix()
@@ -59,6 +59,8 @@ def train_gcn(model, dataset, epochs=1000):
     
     for epoch in range(epochs):
         t = time.time()
+
+        # train
         model.train()
         optimizer.zero_grad()
         output = model(X, adj)
@@ -67,17 +69,25 @@ def train_gcn(model, dataset, epochs=1000):
         loss_train.backward()
         optimizer.step()
 
+        # validate
+        model.eval()
+        output = model(X, adj)
         loss_val = F.nll_loss(output[idx_valid], labels[idx_valid])
         acc_val = accuracy(output[idx_valid], labels[idx_valid])
 
-        print('Epoch: {:04d}'.format(epoch+1),
-              'loss_train: {:.4f}'.format(loss_train.item()),
-              'acc_train: {:.4f}'.format(acc_train.item()),
-              'loss_val: {:.4f}'.format(loss_val.item()),
-              'acc_val: {:.4f}'.format(acc_val.item()),
-              'time: {:.4f}s'.format(time.time() - t))
+        print(f'Epoch: {epoch+1:04d} '
+              f'loss_train: {loss_train.item():.4f} '
+              f'acc_train: {acc_train.item():.4f} '
+              f'loss_val: {loss_val.item():.4f} '
+              f'acc_val: {acc_val.item():.4f} '
+              f'time: {(time.time() - t):.4f}s')
+    
+    model.eval()
+    output = model(X, adj)
+    acc_test = accuracy(output[idx_test], labels[idx_test])
+    loss_test = F.nll_loss(output[idx_test], labels[idx_test])
+    print(f"Test: loss_test: {loss_test:.4f} acc_test: {acc_test:.4f}")
 
-        
 def main(args):
     
     if args.dataset == 'pubmed':

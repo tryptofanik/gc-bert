@@ -1,5 +1,6 @@
 import argparse
 import time
+import os
 import numpy as np
 
 import torch
@@ -88,6 +89,9 @@ def train_gcn(model, dataset, epochs=100):
     loss_test = F.nll_loss(output[idx_test], labels[idx_test])
     print(f"Test: loss_test: {loss_test:.4f} acc_test: {acc_test:.4f}")
 
+    return model
+
+
 def main(args):
     
     if args.dataset == 'pubmed':
@@ -97,21 +101,26 @@ def main(args):
     if args.model == 'gcn':
         import pygcn 
         model = pygcn.GCN(nfeat=512,
-            nhid=512,
+            nhid=256,
             nclass=3,
             dropout=0.5)
     
-    train_gcn(model, dataset)
+    model = train_gcn(model, dataset)
+    os.makedirs(args.save_dir, exist_ok=True)
     
-    
+    with open(os.path.join(args.save_dir, args.run_name + '.pt'), 'wb') as f:
+        torch.save(model.state_dict(), f)
+
+
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset')
     parser.add_argument('--model')
+    parser.add_argument('--run-name', default='test')
+    parser.add_argument('--save-dir', default='saved_models/')
     parser.add_argument('--lr', default=0.001)
-    parser.add_argument('--weight_decay', default=0.01)
+    parser.add_argument('--weight-decay', default=0.01)
     args = parser.parse_args()
     
     main(args)
-    

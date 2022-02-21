@@ -12,7 +12,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 from gc_bert.dataset import PubmedDataset
 from gc_bert.utils import to_torch_sparse
-
+from gat.models import SpGAT, GAT
+from pygcn import GCN
 
 def split(n):
     train_idx, test_idx = train_test_split(np.arange(n), train_size=0.7)
@@ -29,14 +30,17 @@ def split(n):
     return idx_train, idx_valid, idx_test
     
 
-def vectorize_texts(texts, dim=512, min_df=0.001, max_df=0.5):
+def vectorize_texts(texts, dim=512, min_df=0.001, max_df=0.5, to_sparse=True):
     vectorizer = TfidfVectorizer(
         strip_accents='ascii', max_df=max_df, min_df=min_df, max_features=dim
     )
     X = vectorizer.fit_transform(
         texts
     )
-    X = to_torch_sparse(X)
+    if to_sparse:
+        X = to_torch_sparse(X)
+    else:
+        X = torch.tensor(X.todense())
     return X
 
 
@@ -47,16 +51,12 @@ def accuracy(output, labels):
     return correct / len(labels)
 
 
-def train_gcn(model, dataset, epochs=100):
-    
-    labels = dataset.labels
-    adj = dataset.create_adj_matrix()
-    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist())
-    
+def train_gn(model, X, adj, labels, epochs=1000):
+
     optimizer = optim.Adam(
         model.parameters(), lr=0.001, weight_decay=0.01)
-    
-    idx_train, idx_valid, idx_test = split(len(dataset))
+
+    idx_train, idx_valid, idx_test = split(len(labels))
     
     for epoch in range(epochs):
         t = time.time()
@@ -92,20 +92,56 @@ def train_gcn(model, dataset, epochs=100):
     return model
 
 
+def train_gat(model, dataset, epochs=1000):
+    
+    labels = dataset.labels
+    adj = dataset.create_adj_matrix(to_sparse=True)
+    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist(), to_sparse=False)
+    model = train_gn(model, X, adj, labels, epochs)
+
+    return model
+
+
+def train_gcn(model, dataset, epochs=1000):
+    
+    labels = dataset.labels
+    adj = dataset.create_adj_matrix()
+    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist())
+    model = train_gn(model, X, adj, labels, epochs)
+
+    return model
+
+
 def main(args):
     
     if args.dataset == 'pubmed':
         dataset = PubmedDataset('pubmed/data/articles.json', 'pubmed/data/citations.csv')
         dataset.load_data()
+    else:
+        raise Exception('No dataset was chosen.')
     
     if args.model == 'gcn':
-        import pygcn 
-        model = pygcn.GCN(nfeat=512,
+        model = GCN(
+            nfeat=512,
             nhid=256,
             nclass=3,
-            dropout=0.5)
+            dropout=0.5
+        )
+        train = train_gcn
+    elif args.model == 'gat':
+        model = SpGAT(
+            nfeat=512,
+            nhid=256,
+            nclass=3,
+            dropout=0.5, 
+            alpha=0.2,
+            nheads=8
+        )
+        train = train_gat
+    else:
+        raise Exception('No model was chosen.')
     
-    model = train_gcn(model, dataset)
+    model = train(model, dataset)
     os.makedirs(args.save_dir, exist_ok=True)
     
     with open(os.path.join(args.save_dir, args.run_name + '.pt'), 'wb') as f:

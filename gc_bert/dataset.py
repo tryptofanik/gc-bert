@@ -83,13 +83,19 @@ class PubmedDataset(Dataset):
         self.G.add_edges_from(self.citations.values.tolist())
         return self.G
 
-    def create_adj_matrix(self):
+    def create_adj_matrix(self, to_sparse=True):
         if self.G is None:
             self.create_graph()
 
-        self.adj = nx.convert_matrix.to_scipy_sparse_matrix(
-            self.G, nodelist=self.articles.index.tolist()
-        )
-        self.adj = to_torch_sparse(self.adj)
+        if to_sparse:
+            self.adj = nx.convert_matrix.to_scipy_sparse_matrix(
+                self.G, nodelist=self.articles.index.tolist()
+            )
+            self.adj = to_torch_sparse(self.adj)
+        else:
+            self.adj = nx.convert_matrix.to_numpy_array(
+                self.G, nodelist=self.articles.index.tolist()
+            )
+            self.adj = torch.tensor(self.adj)
         return self.adj
 

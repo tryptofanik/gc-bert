@@ -89,9 +89,9 @@ class PubmedDataset(Dataset):
 
         if to_sparse:
             self.adj = nx.convert_matrix.to_scipy_sparse_matrix(
-                self.G, nodelist=self.articles.index.tolist()
+                self.G, nodelist=self.articles.index.tolist(), dtype='float64',
             )
-            self.adj = to_torch_sparse(self.adj)
+#             self.adj = to_torch_sparse(self.adj)
         else:
             self.adj = nx.convert_matrix.to_numpy_array(
                 self.G, nodelist=self.articles.index.tolist()

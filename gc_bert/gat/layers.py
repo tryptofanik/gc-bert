@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 class GraphAttentionLayer(nn.Module):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
@@ -57,7 +60,7 @@ class SpecialSpmmFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, indices, values, shape, b):
         assert indices.requires_grad == False
-        a = torch.sparse_coo_tensor(indices, values, shape)
+        a = torch.sparse_coo_tensor(indices, values, shape, dtype=torch.double)
         ctx.save_for_backward(a, b)
         ctx.N = shape[0]
         return torch.matmul(a, b)
@@ -92,10 +95,10 @@ class SpGraphAttentionLayer(nn.Module):
         self.alpha = alpha
         self.concat = concat
 
-        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features)))
+        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features), dtype=torch.double))
         nn.init.xavier_normal_(self.W.data, gain=1.414)
                 
-        self.a = nn.Parameter(torch.zeros(size=(1, 2*out_features)))
+        self.a = nn.Parameter(torch.zeros(size=(1, 2*out_features), dtype=torch.double))
         nn.init.xavier_normal_(self.a.data, gain=1.414)
 
         self.dropout = nn.Dropout(dropout)
@@ -103,15 +106,13 @@ class SpGraphAttentionLayer(nn.Module):
         self.special_spmm = SpecialSpmm()
 
     def forward(self, input, adj):
-        dv = 'cuda' if input.is_cuda else 'cpu'
-
         N = input.size()[0]
-        edge = adj.nonzero().t()
+        edge = torch.tensor(adj.nonzero(), dtype=torch.int64).to(device)
 
         h = torch.mm(input, self.W)
         # h: N x out
         assert not torch.isnan(h).any()
-
+        
         # Self-attention on the nodes - Shared attention mechanism
         edge_h = torch.cat((h[edge[0, :], :], h[edge[1, :], :]), dim=1).t()
         # edge: 2*D x E
@@ -120,7 +121,7 @@ class SpGraphAttentionLayer(nn.Module):
         assert not torch.isnan(edge_e).any()
         # edge_e: E
 
-        e_rowsum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N,1), device=dv))
+        e_rowsum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N,1), dtype=torch.double, device=device))
         # e_rowsum: N x 1
 
         edge_e = self.dropout(edge_e)
@@ -132,6 +133,7 @@ class SpGraphAttentionLayer(nn.Module):
         
         h_prime = h_prime.div(e_rowsum)
         # h_prime: N x out
+        breakpoint()
         assert not torch.isnan(h_prime).any()
 
         if self.concat:

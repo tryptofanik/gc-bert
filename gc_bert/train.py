@@ -15,6 +15,10 @@ from gc_bert.utils import to_torch_sparse
 from gat.models import SpGAT, GAT
 from pygcn import GCN
 
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 def split(n):
     train_idx, test_idx = train_test_split(np.arange(n), train_size=0.7)
     valid_idx, test_idx = train_test_split(test_idx, train_size=1/3)
@@ -40,7 +44,7 @@ def vectorize_texts(texts, dim=512, min_df=0.001, max_df=0.5, to_sparse=True):
     if to_sparse:
         X = to_torch_sparse(X)
     else:
-        X = torch.tensor(X.todense())
+        X = torch.tensor(X.todense(), dtype=torch.double)
     return X
 
 
@@ -94,9 +98,9 @@ def train_gn(model, X, adj, labels, epochs=1000):
 
 def train_gat(model, dataset, epochs=1000):
     
-    labels = dataset.labels
+    labels = dataset.labels.to(device)
     adj = dataset.create_adj_matrix(to_sparse=True)
-    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist(), to_sparse=False)
+    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist(), to_sparse=False).to(device)
     model = train_gn(model, X, adj, labels, epochs)
 
     return model
@@ -104,9 +108,9 @@ def train_gat(model, dataset, epochs=1000):
 
 def train_gcn(model, dataset, epochs=1000):
     
-    labels = dataset.labels
-    adj = dataset.create_adj_matrix()
-    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist())
+    labels = dataset.labels.to(device)
+    adj = dataset.create_adj_matrix().to(device)
+    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist()).to(device)
     model = train_gn(model, X, adj, labels, epochs)
 
     return model
@@ -141,6 +145,7 @@ def main(args):
     else:
         raise Exception('No model was chosen.')
     
+    model = model.to(device)
     model = train(model, dataset)
     os.makedirs(args.save_dir, exist_ok=True)
     

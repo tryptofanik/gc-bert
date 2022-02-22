@@ -78,7 +78,7 @@ class PubmedDataset(Dataset):
             text = self.transform(text)
         if self.target_transform:
             label = self.target_transform(label)
-        return text, label     
+        return text, label
 
     def create_authors_list(self):
         self.authors = set.union(*[set(i) for i in self.articles.authors.tolist()])

@@ -149,9 +149,9 @@ def run_epoch(model, loader, optimizer, epoch, mode='train'):
         optimizer.zero_grad()
     
     acc = accuracy(torch.concat(predictions).to('cpu'), torch.concat(labels))
-    loss = torch.concat(losses).mean()
+    loss = torch.tensor(losses).mean()
     print(
-        f'Epoch: {epoch+1:04d} loss_{mode}: {loss:.4f} acc_{mode}: {acc.item():.4f}'
+        f'Epoch: {epoch+1:04d} loss_{mode}: {loss:.4f} acc_{mode}: {acc.item():.4f} '
         f'time: {(time.time() - t):.4f}s'
     )
 
@@ -161,15 +161,24 @@ def train_bert(model, dataset, epochs=1000):
     tokenizer_ = partial(
         tokenizer, padding='max_length', truncation=True, max_length=512, return_tensors='pt'
     )
+
+    # manage dataset
     dataset.transform = tokenizer_
-    idx_train, idx_valid, idx_test = split(len(dataset))
+    n = len(dataset)
+    n_train = int(n * 0.7)
+    n_valid = int(n * 0.2)
+    train_dataset, valid_dataset, test_dataset = torch.utils.data.random_split(
+        dataset,
+        lengths=[n_train, n_valid, n - (n_train + n_valid)]
+    )
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    valid_loader = DataLoader(valid_dataset, batch_size=32)
+    test_loader = DataLoader(test_dataset, batch_size=32)
 
-    train_loader = DataLoader(dataset[idx_train], batch_size=32, shuffle=True)
-    valid_loader = DataLoader(dataset[idx_valid], batch_size=32)
-    test_loader = DataLoader(dataset[idx_test], batch_size=32)
-
+    # set optimizer
     optimizer = optim.Adam(model.parameters(), lr=5e-5, weight_decay=0.01)
 
+    # run model
     for epoch in range(epochs):
         # train
         run_epoch(model, train_loader, optimizer, epoch, 'train')

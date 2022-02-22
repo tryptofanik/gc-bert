@@ -133,7 +133,7 @@ class SpGraphAttentionLayer(nn.Module):
         
         h_prime = h_prime.div(e_rowsum)
         # h_prime: N x out
-        breakpoint()
+
         assert not torch.isnan(h_prime).any()
 
         if self.concat:

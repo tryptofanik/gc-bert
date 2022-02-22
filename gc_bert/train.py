@@ -16,13 +16,14 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from gc_bert.dataset import PubmedDataset
 from gc_bert.utils import to_torch_sparse
+from gc_bert import log
 from gat.models import SpGAT, GAT
 from pygcn import GCN
-
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BERT_MODEL_NAME = 'bert-base-uncased'
 
+logger = log.create_logger()
 
 def split(n):
     train_idx, test_idx = train_test_split(np.arange(n), train_size=0.7)
@@ -86,7 +87,7 @@ def train_gn(model, X, adj, labels, epochs=1000):
         loss_val = F.nll_loss(output[idx_valid], labels[idx_valid])
         acc_val = accuracy(output[idx_valid], labels[idx_valid])
 
-        print(f'Epoch: {epoch+1:04d} '
+        logger.info(f'Epoch: {epoch+1:04d} '
               f'loss_train: {loss_train.item():.4f} '
               f'acc_train: {acc_train.item():.4f} '
               f'loss_val: {loss_val.item():.4f} '
@@ -97,7 +98,7 @@ def train_gn(model, X, adj, labels, epochs=1000):
     output = model(X, adj)
     acc_test = accuracy(output[idx_test], labels[idx_test])
     loss_test = F.nll_loss(output[idx_test], labels[idx_test])
-    print(f"Test: loss_test: {loss_test:.4f} acc_test: {acc_test:.4f}")
+    logger.info(f"Test: loss_test: {loss_test:.4f} acc_test: {acc_test:.4f}")
 
     return model
 
@@ -115,8 +116,8 @@ def train_gat(model, dataset, epochs=1000):
 def train_gcn(model, dataset, epochs=1000):
     
     labels = dataset.labels.to(DEVICE)
-    adj = dataset.create_adj_matrix()
-    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist()).to(DEVICE)
+    adj = to_torch_sparse(dataset.create_adj_matrix())
+    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist(), to_sparse=False).to(DEVICE)
     model = train_gn(model, X, adj, labels, epochs)
 
     return model
@@ -150,7 +151,7 @@ def run_epoch(model, loader, optimizer, epoch, mode='train'):
     
     acc = accuracy(torch.concat(predictions).to('cpu'), torch.concat(labels))
     loss = torch.tensor(losses).mean()
-    print(
+    logger.info(
         f'Epoch: {epoch+1:04d} loss_{mode}: {loss:.4f} acc_{mode}: {acc.item():.4f} '
         f'time: {(time.time() - t):.4f}s'
     )
@@ -191,9 +192,11 @@ def train_bert(model, dataset, epochs=1000):
     run_epoch(model, test_loader, optimizer, epoch, 'test')
 
 
-
 def main(args):
     
+    log.add_file_handler(logger, args.save_dir)
+    logger.info(f'Parameters of run: {args}')
+
     if args.dataset == 'pubmed':
         dataset = PubmedDataset('pubmed/data/articles.json', 'pubmed/data/citations.csv')
         dataset.load_data()

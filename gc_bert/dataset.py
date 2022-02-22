@@ -22,7 +22,12 @@ class PubmedDataset(Dataset):
         self.citation_path = citation_path
         self.transform = transform
         self.target_transform = target_transform
-        
+
+    def remove_disconnected_nodes(self):
+        to_exclude = set(self.articles.index) - set(self.citations.target.astype(int)) - set(self.citations.source.astype(int))
+        self.articles = self.articles.loc[~self.articles.index.isin(to_exclude)]
+        self.pmid_to_id = {k:v for k,v in self.pmid_to_id.items() if v not in to_exclude}
+
     def clean_data(self):
         self.articles = (
             self.articles
@@ -52,6 +57,7 @@ class PubmedDataset(Dataset):
                 target=self.citations.target.map(self.pmid_to_id),
             )
         )
+        self.remove_disconnected_nodes()
     
     def load_data(self):
         with open(self.path) as f:
@@ -91,11 +97,9 @@ class PubmedDataset(Dataset):
             self.adj = nx.convert_matrix.to_scipy_sparse_matrix(
                 self.G, nodelist=self.articles.index.tolist(), dtype='float64',
             )
-#             self.adj = to_torch_sparse(self.adj)
         else:
             self.adj = nx.convert_matrix.to_numpy_array(
                 self.G, nodelist=self.articles.index.tolist()
             )
             self.adj = torch.tensor(self.adj)
-        return self.adj
-
+        return self.adj 

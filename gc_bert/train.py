@@ -12,8 +12,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, BertConfig
 
+from gc_bert.bert import BERT
 from gc_bert.dataset import PubmedDataset
 from gc_bert.utils import to_torch_sparse
 from gc_bert import log
@@ -194,6 +195,7 @@ def train_bert(model, dataset, epochs=1000):
 
 def main(args):
     
+    os.makedirs(args.save_dir, exist_ok=True)
     log.add_file_handler(logger, args.save_dir)
     logger.info(f'Parameters of run: {args}')
 
@@ -222,20 +224,17 @@ def main(args):
         )
         train = train_gat
     elif args.model == 'bert':
+        config = BertConfig(num_labels=len(dataset.labels.unique()))
         if args.model_load_path is not None:
-            model = AutoModelForSequenceClassification.from_pretrained(args.model_load_path)
+            model = BERT.from_pretrained(args.model_load_path, config=config)
         else:
-            model = AutoModelForSequenceClassification.from_pretrained(
-                BERT_MODEL_NAME, 
-                num_labels=len(dataset.labels.unique())
-            )
+            model = BERT.from_pretrained(BERT_MODEL_NAME, config=config)
         train = train_bert
     else:
         raise Exception('No model was chosen.')
     
     model = model.to(DEVICE)
     model = train(model, dataset)
-    os.makedirs(args.save_dir, exist_ok=True)
     
     if args.model != 'bert':
         with open(os.path.join(args.save_dir, args.run_name + '.pt'), 'wb') as f:

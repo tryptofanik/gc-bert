@@ -1,9 +1,10 @@
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.nn import BCEWithLogitsLoss
-import torch.nn.functional as F
-from transformers.models.bert.modeling_bert import BertModel, BertPreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutput
+from transformers.models.bert.modeling_bert import (BertModel,
+                                                    BertPreTrainedModel)
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 

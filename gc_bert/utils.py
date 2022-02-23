@@ -1,5 +1,6 @@
-import torch
 import numpy as np
+import torch
+
 
 def to_torch_sparse(x):
     coo = x.tocoo()

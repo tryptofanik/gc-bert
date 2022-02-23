@@ -1,25 +1,24 @@
 import argparse
-import time
 import os
-import numpy as np
-
+import time
 from functools import partial
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-
-from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, BertConfig
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader
+from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
+                          BertConfig)
 
+from gc_bert import log
 from gc_bert.bert import BERT
 from gc_bert.dataset import PubmedDataset
+from gc_bert.gat.models import GAT, SpGAT
+from gc_bert.gcn.models import GCN
 from gc_bert.utils import to_torch_sparse
-from gc_bert import log
-from gat.models import SpGAT, GAT
-from pygcn import GCN
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BERT_MODEL_NAME = 'bert-base-uncased'

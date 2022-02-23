@@ -50,14 +50,14 @@ def vectorize_texts(texts, dim=512, min_df=0.001, max_df=0.5, to_sparse=True):
     if to_sparse:
         X = to_torch_sparse(X)
     else:
-        X = torch.tensor(X.todense(), dtype=torch.double)
+        X = torch.tensor(X.todense(), dtype=torch.float32)
     return X
 
 
 def accuracy(preds, labels):
     if len(preds.shape) == 2:
         preds = preds.max(1)[1].type_as(labels)
-    correct = preds.eq(labels).double()
+    correct = preds.eq(labels).to(torch.float32)
     correct = correct.sum()
     return correct / len(labels)
 
@@ -116,7 +116,7 @@ def train_gat(model, dataset, epochs=1000):
 def train_gcn(model, dataset, epochs=1000):
     
     labels = dataset.labels.to(DEVICE)
-    adj = to_torch_sparse(dataset.create_adj_matrix())
+    adj = to_torch_sparse(dataset.create_adj_matrix()).to(DEVICE)
     X = vectorize_texts(dataset.articles.abstract.fillna('').tolist(), to_sparse=False).to(DEVICE)
     model = train_gn(model, X, adj, labels, epochs)
 
@@ -225,9 +225,9 @@ def main(args):
     elif args.model == 'bert':
         config = BertConfig(num_labels=len(dataset.labels.unique()))
         if args.model_load_path is not None:
-            model = BERT.from_pretrained(args.model_load_path, config=config)
+            model = BERT(config).from_pretrained(args.model_load_path, config=config)
         else:
-            model = BERT.from_pretrained(BERT_MODEL_NAME, config=config)
+            model = BERT(config).from_pretrained(BERT_MODEL_NAME, config=config)
         train = train_bert
     else:
         raise Exception('No model was chosen.')

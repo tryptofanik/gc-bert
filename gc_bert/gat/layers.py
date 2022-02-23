@@ -59,7 +59,7 @@ class SpecialSpmmFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, indices, values, shape, b):
         assert indices.requires_grad == False
-        a = torch.sparse_coo_tensor(indices, values, shape, dtype=torch.double)
+        a = torch.sparse_coo_tensor(indices, values, shape, dtype=torch.float32)
         ctx.save_for_backward(a, b)
         ctx.N = shape[0]
         return torch.matmul(a, b)
@@ -94,10 +94,10 @@ class SpGraphAttentionLayer(nn.Module):
         self.alpha = alpha
         self.concat = concat
 
-        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features), dtype=torch.double))
+        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features), dtype=torch.float32))
         nn.init.xavier_normal_(self.W.data, gain=1.414)
                 
-        self.a = nn.Parameter(torch.zeros(size=(1, 2*out_features), dtype=torch.double))
+        self.a = nn.Parameter(torch.zeros(size=(1, 2*out_features), dtype=torch.float32))
         nn.init.xavier_normal_(self.a.data, gain=1.414)
 
         self.dropout = nn.Dropout(dropout)
@@ -120,7 +120,7 @@ class SpGraphAttentionLayer(nn.Module):
         assert not torch.isnan(edge_e).any()
         # edge_e: E
 
-        e_rowsum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N,1), dtype=torch.double, device=device))
+        e_rowsum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N,1), dtype=torch.float32, device=device))
         # e_rowsum: N x 1
 
         edge_e = self.dropout(edge_e)

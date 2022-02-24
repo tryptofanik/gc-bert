@@ -7,8 +7,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                           BertConfig)
@@ -18,48 +16,12 @@ from gc_bert.bert import BERT
 from gc_bert.dataset import PubmedDataset
 from gc_bert.gat.models import GAT, SpGAT
 from gc_bert.gcn.models import GCN
-from gc_bert.utils import to_torch_sparse
+from gc_bert.utils import accuracy, split, to_torch_sparse, vectorize_texts
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BERT_MODEL_NAME = 'bert-base-uncased'
 
 logger = log.create_logger()
-
-def split(n):
-    train_idx, test_idx = train_test_split(np.arange(n), train_size=0.7)
-    valid_idx, test_idx = train_test_split(test_idx, train_size=1/3)
-
-    idx_train = np.zeros(n).astype(bool)
-    idx_train[train_idx] = True
-
-    idx_valid = np.zeros(n).astype(bool)
-    idx_valid[valid_idx] = True
-
-    idx_test = np.zeros(n).astype(bool)
-    idx_test[test_idx] = True
-    return idx_train, idx_valid, idx_test
-    
-
-def vectorize_texts(texts, dim=512, min_df=0.001, max_df=0.5, to_sparse=True):
-    vectorizer = TfidfVectorizer(
-        strip_accents='ascii', max_df=max_df, min_df=min_df, max_features=dim
-    )
-    X = vectorizer.fit_transform(
-        texts
-    )
-    if to_sparse:
-        X = to_torch_sparse(X)
-    else:
-        X = torch.tensor(X.todense(), dtype=torch.float32)
-    return X
-
-
-def accuracy(preds, labels):
-    if len(preds.shape) == 2:
-        preds = preds.max(1)[1].type_as(labels)
-    correct = preds.eq(labels).to(torch.float32)
-    correct = correct.sum()
-    return correct / len(labels)
 
 
 def train_gn(model, X, adj, labels, epochs=1000):
@@ -233,7 +195,7 @@ def main(args):
         raise Exception('No model was chosen.')
     
     model = model.to(DEVICE)
-    model = train(model, dataset)
+    model = train(model, dataset, epochs=args.epochs)
     
     if args.model != 'bert':
         with open(os.path.join(args.save_dir, args.run_name + '.pt'), 'wb') as f:
@@ -250,6 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--model-load-path', default=None)
     parser.add_argument('--run-name', default='test')
     parser.add_argument('--save-dir', default='saved_models/')
+    parser.add_argument('--epochs', default=1000)
     parser.add_argument('--lr', default=0.001)
     parser.add_argument('--weight-decay', default=0.01)
     args = parser.parse_args()

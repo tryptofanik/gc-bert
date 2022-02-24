@@ -6,15 +6,13 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from gc_bert.utils import to_torch_sparse
+from gc_bert.utils import to_torch_sparse, split
 
 
 class PubmedDataset(Dataset):
     
-    def __init__(self, data_path, citation_path, transform=None, target_transform=None):
-        self.labels = None
+    def __init__(self, data_path, citation_path, transform=None, target_transform=None, mode=None):
         self.articles = None
-        self.texts = None
         self.citations = None
         self.G = None
         self.adj = None
@@ -22,6 +20,7 @@ class PubmedDataset(Dataset):
         self.citation_path = citation_path
         self.transform = transform
         self.target_transform = target_transform
+        self.mode = None
 
     def remove_disconnected_nodes(self):
         to_exclude = set(self.articles.index) - set(self.citations.target.astype(int)) - set(self.citations.source.astype(int))
@@ -35,9 +34,10 @@ class PubmedDataset(Dataset):
             .pipe(lambda df: df.assign(
                 label=df.label.astype(int),
                 pmid=df.pmid.astype(int),
+                time=pd.to_datetime(self.articles.history.apply(lambda x: min(x.values()))),
             ))
             .reset_index(drop=True)
-            [['abstract', 'label', 'pmid', 'authors', 'title']]
+            [['abstract', 'label', 'pmid', 'authors', 'title', 'time']]
         )
         self.pmid_to_id = (
             self.articles
@@ -64,21 +64,19 @@ class PubmedDataset(Dataset):
             self.articles = pd.DataFrame(json.load(f))
         self.citations = pd.read_csv(self.citation_path)
         self.clean_data()
-        self.texts = self.articles.abstract.tolist()
-        self.labels = torch.tensor(self.articles.label.tolist())
-        
-    def __len__(self):
-        return len(self.articles)
+        self.split_data()
 
-    def __getitem__(self, idx):
-#         text, label = self.articles.loc[idx, ['abstract', 'label']]
-        text = self.texts[idx]
-        label = self.labels[idx]
-        if self.transform:
-            text = self.transform(text)
-        if self.target_transform:
-            label = self.target_transform(label)
-        return text, label
+    def split_data(self):
+        idx_train, idx_valid, idx_test = split(self.articles.shape[0])
+        self.articles.loc[idx_train, 'mode'] = 'train'
+        self.articles.loc[idx_valid, 'mode'] = 'valid'
+        self.articles.loc[idx_test, 'mode'] = 'test'
+
+    def change_mode(self, mode):
+        if mode in ['train', 'valid', 'test']:
+            self.mode = mode
+        else:
+            raise Exception(f'Inproper mode {mode}')
 
     def create_authors_list(self):
         self.authors = set.union(*[set(i) for i in self.articles.authors.tolist()])
@@ -103,3 +101,22 @@ class PubmedDataset(Dataset):
             )
             self.adj = torch.tensor(self.adj)
         return self.adj 
+
+    @property
+    def labels(self):
+        return torch.tensor(self.articles.label.tolist())
+
+    def __len__(self):
+        if self.mode is None:
+            return len(self.articles)
+        else:
+            return len(self.articles.loc[self.articles['mode'] == self.mode])
+
+    def __getitem__(self, idx):
+        text, label = self.articles.loc[
+            self.articles['mode'] == self.mode, ['abstract', 'label']].iloc[idx]
+        if self.transform:
+            text = self.transform(text)
+        if self.target_transform:
+            label = self.target_transform(label)
+        return text, label

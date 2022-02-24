@@ -1,0 +1,178 @@
+import time
+from numpy import outer
+
+import torch
+import torch.nn.functional as F
+from torch.nn import BCEWithLogitsLoss, NLLLoss
+import torch.optim as optim
+from torch.utils.data import DataLoader
+
+from gc_bert.utils import to_torch_sparse, vectorize_texts
+from gc_bert.monitor import Monitor
+
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+class Trainer:
+
+    def __init__(
+        self,
+        model,
+        dataset,
+        logger,
+        lr = 5e-5,
+        weight_decay = 0.01,
+        loss_fun = BCEWithLogitsLoss(reduction='none'),
+    ):
+        self.model = model
+        self.dataset = dataset
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.loss_fun = loss_fun
+        self.logger = logger
+
+        self.train_monitor = Monitor(logger, dataset.num_labels, 'train')
+        self.valid_monitor = Monitor(logger, dataset.num_labels, 'valid')
+        self.test_monitor = Monitor(logger, dataset.num_labels, 'test')
+        self.optimizer = None
+        self.lr_scheduler = None
+
+    def create_optimizer(self):
+        self.optimizer = optim.Adam(
+            self.model.parameters(),
+            lr = self.lr,
+            weight_decay = self.weight_decay,
+        )
+        self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='min',  # 'min' for loss; 'max' for acc
+            patience=40,
+            factor=0.1,  # new_lr = lr * factor
+        )
+
+    def get_dataloader(self, mode='train'):
+        self.dataset.change_mode(mode=mode)
+        return DataLoader(
+            self.dataset,
+            batch_size=32,
+            shuffle=True if mode == 'train' else False,
+        )
+
+    def validate(self, mode='valid'):
+        self.model.eval()
+        self.dataset.change_mode(mode=mode)
+        loader = self.get_dataloader(mode=mode)
+        monitor = self.valid_monitor if mode == 'valid' else self.test_monitor
+        t = time.time()
+        for X, y in loader:
+            output = self.model(X)
+            preds = torch.argmax(output, dim=-1)
+            loss = self.loss_fun(preds, y)
+            monitor.update(preds, y, loss)
+        return monitor.emit(
+            lr=self.lr_scheduler.last_epoch,
+            time=time.time() - t,
+        )
+
+    def train(self, epochs):
+        if self.optimizer is None:
+            self.create_optimizer()
+
+        for epoch in range(epochs):
+            t = time.time()
+            self.model.train()
+            self.dataset.change_mode('train')
+            for X, y in self.get_dataloader(mode='train'):
+                self.optimizer.zero_grad()
+                output = self.model(X)
+                loss = self.loss_fun(output, y)
+                loss.mean().backward()
+                self.optimizer.step()
+
+                preds = torch.argmax(output, dim=-1)
+                self.train_monitor.update(preds, y, loss)
+
+            self.train_monitor.emit(
+                epoch=epoch,
+                lr=self.lr_scheduler.last_epoch,
+                time=time.time() - t,
+            )
+            valid_res = self.validate(mode='valid')
+
+            self.lr_scheduler.step(valid_res['loss'])
+
+
+class GNNTrainer(Trainer):
+
+    def __init__(
+        self,
+        model,
+        dataset,
+        logger,
+        loss_fun=NLLLoss(reduction='none'),
+        **kwargs
+    ):
+        super().__init__(model, dataset, logger, **kwargs)
+        self.loss_fun=loss_fun
+    
+    def prepare_graph_data(self, mode):
+        self.dataset.change_mode(mode)
+        if self.dataset.G is None:
+            self.dataset.create_graph()
+        if self.dataset.adj is None:
+            self.dataset.create_adj_matrix(to_sparse=True)
+        adj = to_torch_sparse(self.dataset.adj).to(DEVICE)
+        X = vectorize_texts(
+            self.dataset.articles.abstract.tolist(), to_sparse=False
+        ).to(DEVICE)
+        y = self.dataset.labels
+        return X, adj, y
+
+
+    def validate(self, mode='valid', epoch=None):
+        self.model.eval()
+        monitor = self.valid_monitor if mode == 'valid' else self.test_monitor
+        X, adj, y = self.prepare_graph_data(mode)
+        t = time.time()
+
+        output = self.model(X, adj)
+        output = output[self.dataset.mask]
+        loss = self.loss_fun(output, y)
+        preds = torch.argmax(output, dim=-1)
+        monitor.update(preds, y, loss)
+        return monitor.emit(
+            epoch=epoch,
+            lr=self.lr_scheduler.last_epoch,
+            time=round(time.time() - t, 3),
+        )
+
+    def train(self, epochs):
+        if self.optimizer is None:
+            self.create_optimizer()
+
+        X, adj, y = self.prepare_graph_data('train')
+
+        for epoch in range(epochs):
+            t = time.time()
+
+            self.model.train()
+            self.dataset.change_mode('train')
+            self.optimizer.zero_grad()
+            output = self.model(X, adj)
+            output = output[self.dataset.mask]
+            loss = self.loss_fun(output, y)
+            loss.mean().backward()
+            self.optimizer.step()
+
+            preds = torch.argmax(output, dim=-1)
+            self.train_monitor.update(preds, y, loss)
+
+            self.train_monitor.emit(
+                epoch=epoch,
+                lr=self.lr_scheduler.last_epoch,
+                time=time.time() - t,
+            )
+            valid_res = self.validate(mode='valid', epoch=epoch)
+            self.lr_scheduler.step(valid_res['loss'])
+
+        return self.model

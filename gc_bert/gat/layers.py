@@ -106,7 +106,7 @@ class SpGraphAttentionLayer(nn.Module):
 
     def forward(self, input, adj):
         N = input.size()[0]
-        edge = torch.tensor(adj.nonzero(), dtype=torch.int64).to(device)
+        edge = adj.coalesce().indices().to(device)
 
         h = torch.mm(input, self.W)
         # h: N x out

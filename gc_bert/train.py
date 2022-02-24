@@ -8,81 +8,20 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
-                          BertConfig)
+from transformers import AutoTokenizer, BertConfig
 
 from gc_bert import log
 from gc_bert.bert import BERT
 from gc_bert.dataset import PubmedDataset
 from gc_bert.gat.models import GAT, SpGAT
 from gc_bert.gcn.models import GCN
-from gc_bert.utils import accuracy, split, to_torch_sparse, vectorize_texts
+from gc_bert.utils import accuracy
+from gc_bert.trainer import GNNTrainer
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BERT_MODEL_NAME = 'bert-base-uncased'
 
 logger = log.create_logger()
-
-
-def train_gn(model, X, adj, labels, epochs=1000):
-
-    optimizer = optim.Adam(
-        model.parameters(), lr=0.001, weight_decay=0.01)
-
-    idx_train, idx_valid, idx_test = split(len(labels))
-    
-    for epoch in range(epochs):
-        t = time.time()
-
-        # train
-        model.train()
-        optimizer.zero_grad()
-        output = model(X, adj)
-        loss_train = F.nll_loss(output[idx_train], labels[idx_train])
-        acc_train = accuracy(output[idx_train], labels[idx_train])
-        loss_train.backward()
-        optimizer.step()
-
-        # validate
-        model.eval()
-        output = model(X, adj)
-        loss_val = F.nll_loss(output[idx_valid], labels[idx_valid])
-        acc_val = accuracy(output[idx_valid], labels[idx_valid])
-
-        logger.info(f'Epoch: {epoch+1:04d} '
-              f'loss_train: {loss_train.item():.4f} '
-              f'acc_train: {acc_train.item():.4f} '
-              f'loss_val: {loss_val.item():.4f} '
-              f'acc_val: {acc_val.item():.4f} '
-              f'time: {(time.time() - t):.4f}s')
-    
-    model.eval()
-    output = model(X, adj)
-    acc_test = accuracy(output[idx_test], labels[idx_test])
-    loss_test = F.nll_loss(output[idx_test], labels[idx_test])
-    logger.info(f"Test: loss_test: {loss_test:.4f} acc_test: {acc_test:.4f}")
-
-    return model
-
-
-def train_gat(model, dataset, epochs=1000):
-    
-    labels = dataset.labels.to(DEVICE)
-    adj = dataset.create_adj_matrix(to_sparse=True)
-    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist(), to_sparse=False).to(DEVICE)
-    model = train_gn(model, X, adj, labels, epochs)
-
-    return model
-
-
-def train_gcn(model, dataset, epochs=1000):
-    
-    labels = dataset.labels.to(DEVICE)
-    adj = to_torch_sparse(dataset.create_adj_matrix()).to(DEVICE)
-    X = vectorize_texts(dataset.articles.abstract.fillna('').tolist(), to_sparse=False).to(DEVICE)
-    model = train_gn(model, X, adj, labels, epochs)
-
-    return model
 
 
 def run_epoch(model, loader, optimizer, epoch, mode='train'):
@@ -173,7 +112,7 @@ def main(args):
             nclass=3,
             dropout=0.5
         )
-        train = train_gcn
+        trainer = GNNTrainer(model, dataset, logger, lr=0.001)
     elif args.model == 'gat':
         model = SpGAT(
             nfeat=512,
@@ -183,19 +122,19 @@ def main(args):
             alpha=0.2,
             nheads=8
         )
-        train = train_gat
+        trainer = GNNTrainer(model, dataset, logger, lr=0.001)
     elif args.model == 'bert':
         config = BertConfig(num_labels=len(dataset.labels.unique()))
         if args.model_load_path is not None:
             model = BERT(config).from_pretrained(args.model_load_path, config=config)
         else:
             model = BERT(config).from_pretrained(BERT_MODEL_NAME, config=config)
-        train = train_bert
+        trainer = train_bert
     else:
         raise Exception('No model was chosen.')
     
     model = model.to(DEVICE)
-    model = train(model, dataset, epochs=args.epochs)
+    model = trainer.train(args.epochs)
     
     if args.model != 'bert':
         with open(os.path.join(args.save_dir, args.run_name + '.pt'), 'wb') as f:

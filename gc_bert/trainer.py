@@ -1,5 +1,4 @@
 import time
-from numpy import outer
 
 import torch
 import torch.nn.functional as F
@@ -37,6 +36,10 @@ class Trainer:
         self.optimizer = None
         self.lr_scheduler = None
 
+    def prepare(self):
+        if self.optimizer is None or self.lr_scheduler is None:
+            self.create_optimizer()
+
     def create_optimizer(self):
         self.optimizer = optim.Adam(
             self.model.parameters(),
@@ -70,13 +73,11 @@ class Trainer:
             loss = self.loss_fun(preds, y)
             monitor.update(preds, y, loss)
         return monitor.emit(
-            lr=self.lr_scheduler.last_epoch,
             time=time.time() - t,
         )
 
     def train(self, epochs):
-        if self.optimizer is None:
-            self.create_optimizer()
+        self.prepare()
 
         for epoch in range(epochs):
             t = time.time()
@@ -94,12 +95,13 @@ class Trainer:
 
             self.train_monitor.emit(
                 epoch=epoch,
-                lr=self.lr_scheduler.last_epoch,
+                lr=self.optimizer.param_groups[0]['lr'],
                 time=time.time() - t,
             )
             valid_res = self.validate(mode='valid')
-
             self.lr_scheduler.step(valid_res['loss'])
+        
+        return self.model
 
 
 class GNNTrainer(Trainer):
@@ -115,50 +117,50 @@ class GNNTrainer(Trainer):
         super().__init__(model, dataset, logger, **kwargs)
         self.loss_fun=loss_fun
     
-    def prepare_graph_data(self, mode):
-        self.dataset.change_mode(mode)
+    def prepare(self):
+        super().prepare()
         if self.dataset.G is None:
             self.dataset.create_graph()
         if self.dataset.adj is None:
             self.dataset.create_adj_matrix(to_sparse=True)
-        adj = to_torch_sparse(self.dataset.adj).to(DEVICE)
-        X = vectorize_texts(
+        self.X = vectorize_texts(
             self.dataset.articles.abstract.tolist(), to_sparse=False
         ).to(DEVICE)
-        y = self.dataset.labels
-        return X, adj, y
+        self.adj = to_torch_sparse(self.dataset.adj).to(DEVICE)
 
+    def get_mode_labels(self, mode):
+        self.dataset.change_mode(mode)
+        return self.dataset.labels
 
     def validate(self, mode='valid', epoch=None):
         self.model.eval()
+        self.dataset.change_mode(mode=mode)
         monitor = self.valid_monitor if mode == 'valid' else self.test_monitor
-        X, adj, y = self.prepare_graph_data(mode)
         t = time.time()
 
-        output = self.model(X, adj)
+        y = self.dataset.labels
+        output = self.model(self.X, self.adj)
         output = output[self.dataset.mask]
         loss = self.loss_fun(output, y)
         preds = torch.argmax(output, dim=-1)
         monitor.update(preds, y, loss)
         return monitor.emit(
             epoch=epoch,
-            lr=self.lr_scheduler.last_epoch,
             time=round(time.time() - t, 3),
         )
 
     def train(self, epochs):
-        if self.optimizer is None:
-            self.create_optimizer()
 
-        X, adj, y = self.prepare_graph_data('train')
+        self.prepare()
 
         for epoch in range(epochs):
             t = time.time()
 
             self.model.train()
             self.dataset.change_mode('train')
+            y = self.dataset.labels
             self.optimizer.zero_grad()
-            output = self.model(X, adj)
+            output = self.model(self.X, self.adj)
             output = output[self.dataset.mask]
             loss = self.loss_fun(output, y)
             loss.mean().backward()
@@ -169,8 +171,8 @@ class GNNTrainer(Trainer):
 
             self.train_monitor.emit(
                 epoch=epoch,
-                lr=self.lr_scheduler.last_epoch,
-                time=time.time() - t,
+                lr=self.optimizer.param_groups[0]['lr'],
+                time=round(time.time() - t, 3),
             )
             valid_res = self.validate(mode='valid', epoch=epoch)
             self.lr_scheduler.step(valid_res['loss'])

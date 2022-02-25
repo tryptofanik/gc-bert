@@ -11,7 +11,7 @@ from gc_bert.utils import to_torch_sparse, split
 
 class PubmedDataset(Dataset):
     
-    def __init__(self, data_path, citation_path, transform=None, target_transform=None, mode=None):
+    def __init__(self, data_path, citation_path, transform=None, target_transform=None):
         self.articles = None
         self.citations = None
         self.G = None
@@ -21,6 +21,7 @@ class PubmedDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.mode = None
+        self.mask = None
 
     def remove_disconnected_nodes(self):
         to_exclude = set(self.articles.index) - set(self.citations.target.astype(int)) - set(self.citations.source.astype(int))
@@ -30,7 +31,8 @@ class PubmedDataset(Dataset):
     def clean_data(self):
         self.articles = (
             self.articles
-            .loc[(self.articles.label.notna()) & (~self.articles.pmid.duplicated())]
+            .loc[(self.articles.label.notna()) & (~self.articles.pmid.duplicated())
+                & (self.articles.abstract.notna())]
             .pipe(lambda df: df.assign(
                 label=df.label.astype(int),
                 pmid=df.pmid.astype(int),
@@ -75,6 +77,7 @@ class PubmedDataset(Dataset):
     def change_mode(self, mode):
         if mode in ['train', 'valid', 'test']:
             self.mode = mode
+            self.mask = (self.articles['mode'] == mode).values
         else:
             raise Exception(f'Inproper mode {mode}')
 
@@ -99,22 +102,30 @@ class PubmedDataset(Dataset):
             self.adj = nx.convert_matrix.to_numpy_array(
                 self.G, nodelist=self.articles.index.tolist()
             )
-            self.adj = torch.tensor(self.adj)
         return self.adj 
 
     @property
     def labels(self):
-        return torch.tensor(self.articles.label.tolist())
+        if self.mode is None:
+            return torch.tensor(self.articles.label.tolist())
+        else:
+            return torch.tensor(
+                self.articles.loc[self.mask].label.tolist()
+            )
+
+    @property
+    def num_labels(self):
+        return len(self.articles.label.unique())
 
     def __len__(self):
         if self.mode is None:
             return len(self.articles)
         else:
-            return len(self.articles.loc[self.articles['mode'] == self.mode])
+            return len(self.articles.loc[self.mask])
 
     def __getitem__(self, idx):
         text, label = self.articles.loc[
-            self.articles['mode'] == self.mode, ['abstract', 'label']].iloc[idx]
+            self.mask, ['abstract', 'label']].iloc[idx]
         if self.transform:
             text = self.transform(text)
         if self.target_transform:

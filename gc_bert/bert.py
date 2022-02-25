@@ -61,7 +61,7 @@ class BERT(BertPreTrainedModel):
         logits = self.classifier(last_hidden_state)
 
         if labels is not None:
-            loss = self.loss_fct(logits, F.one_hot(labels).to(torch.float32))
+            loss = self.loss_fct(logits, F.one_hot(labels, num_classes=self.config.num_labels).to(torch.float32))
 
         if not return_dict:
             output = (logits,) + outputs[2:]

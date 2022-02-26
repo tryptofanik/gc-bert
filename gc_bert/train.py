@@ -16,81 +16,12 @@ from gc_bert.dataset import PubmedDataset
 from gc_bert.gat.models import GAT, SpGAT
 from gc_bert.gcn.models import GCN
 from gc_bert.utils import accuracy
-from gc_bert.trainer import GNNTrainer
+from gc_bert.trainer import BERTTrainer, GNNTrainer
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BERT_MODEL_NAME = 'bert-base-uncased'
 
 logger = log.create_logger()
-
-
-def run_epoch(model, loader, optimizer, epoch, mode='train'):
-    if mode == 'train':
-        model.train()
-    else:
-        model.eval()
-
-    labels = []
-    predictions = []
-    losses = []
-    
-    t = time.time()
-    for X, y in loader:
-        output = model(
-            input_ids=X['input_ids'].squeeze().to(DEVICE),
-            token_type_ids=X['token_type_ids'].squeeze().to(DEVICE),
-            attention_mask=X['attention_mask'].squeeze().to(DEVICE),
-            labels=y.to(DEVICE)
-        )
-        output.loss.backward()
-        preds = torch.argmax(output.logits, dim=-1)
-        labels.append(y)
-        predictions.append(preds)
-        losses.append(output.loss.item())
-        optimizer.step()
-        optimizer.zero_grad()
-    
-    acc = accuracy(torch.concat(predictions).to('cpu'), torch.concat(labels))
-    loss = torch.tensor(losses).mean()
-    logger.info(
-        f'Epoch: {epoch+1:04d} loss_{mode}: {loss:.4f} acc_{mode}: {acc.item():.4f} '
-        f'time: {(time.time() - t):.4f}s'
-    )
-
-
-def train_bert(model, dataset, epochs=1000):
-    tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL_NAME)
-    tokenizer_ = partial(
-        tokenizer, padding='max_length', truncation=True, max_length=512, return_tensors='pt'
-    )
-
-    # manage dataset
-    dataset.transform = tokenizer_
-    n = len(dataset)
-    n_train = int(n * 0.7)
-    n_valid = int(n * 0.2)
-    train_dataset, valid_dataset, test_dataset = torch.utils.data.random_split(
-        dataset,
-        lengths=[n_train, n_valid, n - (n_train + n_valid)]
-    )
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    valid_loader = DataLoader(valid_dataset, batch_size=32)
-    test_loader = DataLoader(test_dataset, batch_size=32)
-
-    # set optimizer
-    optimizer = optim.Adam(model.parameters(), lr=5e-5, weight_decay=0.01)
-
-    # run model
-    for epoch in range(epochs):
-        # train
-        run_epoch(model, train_loader, optimizer, epoch, 'train')
-
-        # valid
-        if epoch % 10 == 0:
-            run_epoch(model, valid_loader, optimizer, epoch, 'valid')      
-
-    # test
-    run_epoch(model, test_loader, optimizer, epoch, 'test')
 
 
 def main(args):
@@ -129,7 +60,7 @@ def main(args):
             model = BERT(config).from_pretrained(args.model_load_path, config=config)
         else:
             model = BERT(config).from_pretrained(BERT_MODEL_NAME, config=config)
-        trainer = train_bert
+        trainer = BERTTrainer(model, dataset, logger)
     else:
         raise Exception('No model was chosen.')
     
@@ -146,7 +77,7 @@ def main(args):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset')
+    parser.add_argument('--dataset', default='pubmed')
     parser.add_argument('--model')
     parser.add_argument('--model-load-path', default=None)
     parser.add_argument('--run-name', default='test')

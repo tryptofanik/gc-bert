@@ -1,3 +1,4 @@
+from functools import partial
 import time
 
 import torch
@@ -5,11 +6,13 @@ import torch.nn.functional as F
 from torch.nn import BCEWithLogitsLoss, NLLLoss
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from transformers import AutoTokenizer
 
 from gc_bert.utils import to_torch_sparse, vectorize_texts
 from gc_bert.monitor import Monitor
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+BERT_MODEL_NAME = 'bert-base-uncased'
 
 
 class Trainer:
@@ -67,11 +70,12 @@ class Trainer:
         loader = self.get_dataloader(mode=mode)
         monitor = self.valid_monitor if mode == 'valid' else self.test_monitor
         t = time.time()
-        for X, y in loader:
-            output = self.model(X)
-            preds = torch.argmax(output, dim=-1)
-            loss = self.loss_fun(preds, y)
-            monitor.update(preds, y, loss)
+        with torch.no_grad():
+            for X, y in loader:
+                output = self.model(X)
+                preds = torch.argmax(output, dim=-1)
+                loss = self.loss_fun(preds, y)
+                monitor.update(preds, y, loss)
         return monitor.emit(
             time=time.time() - t,
         )
@@ -137,13 +141,13 @@ class GNNTrainer(Trainer):
         self.dataset.change_mode(mode=mode)
         monitor = self.valid_monitor if mode == 'valid' else self.test_monitor
         t = time.time()
-
-        y = self.dataset.labels
-        output = self.model(self.X, self.adj)
-        output = output[self.dataset.mask]
-        loss = self.loss_fun(output, y)
-        preds = torch.argmax(output, dim=-1)
-        monitor.update(preds, y, loss)
+        with torch.no_grad():
+            y = self.dataset.labels
+            output = self.model(self.X, self.adj)
+            output = output[self.dataset.mask]
+            loss = self.loss_fun(output, y)
+            preds = torch.argmax(output, dim=-1)
+            monitor.update(preds, y, loss)
         return monitor.emit(
             epoch=epoch,
             time=round(time.time() - t, 3),
@@ -175,6 +179,72 @@ class GNNTrainer(Trainer):
                 time=round(time.time() - t, 3),
             )
             valid_res = self.validate(mode='valid', epoch=epoch)
+            self.lr_scheduler.step(valid_res['loss'])
+
+        return self.model
+
+
+class BERTTrainer(Trainer):
+
+    def __init__(self, model, dataset, logger, lr=0.00005, weight_decay=0.01, loss_fun=BCEWithLogitsLoss(reduction='none')):
+        super().__init__(model, dataset, logger, lr, weight_decay, loss_fun)
+
+    def prepare(self):
+        super().prepare()
+        tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL_NAME)
+        self.tokenizer = partial(
+            tokenizer, padding='max_length', truncation=True, max_length=512, return_tensors='pt'
+        )
+        self.dataset.transform = self.tokenizer
+
+
+    def validate(self, epoch=-1, mode='valid'):
+        self.model.eval()
+        self.dataset.change_mode(mode=mode)
+        loader = self.get_dataloader(mode=mode)
+        monitor = self.valid_monitor if mode == 'valid' else self.test_monitor
+        t = time.time()
+        with torch.no_grad():
+            for i, (X, y) in enumerate(loader):
+                output = self.model(
+                    input_ids=X['input_ids'].squeeze().to(DEVICE),
+                    token_type_ids=X['token_type_ids'].squeeze().to(DEVICE),
+                    attention_mask=X['attention_mask'].squeeze().to(DEVICE),
+                    labels=y.to(DEVICE))
+                preds = torch.argmax(output.logits, dim=-1)
+                monitor.update(preds, y, output.loss)
+        return monitor.emit(
+            time=time.time() - t, epoch=epoch
+        )
+
+    def train(self, epochs):
+        self.prepare()
+
+        for epoch in range(epochs):
+            t = time.time()
+            self.model.train()
+            self.dataset.change_mode('train')
+            for i, (X, y) in enumerate(self.get_dataloader(mode='train')):
+                self.optimizer.zero_grad()
+                output = self.model(
+                    input_ids=X['input_ids'].squeeze().to(DEVICE),
+                    token_type_ids=X['token_type_ids'].squeeze().to(DEVICE),
+                    attention_mask=X['attention_mask'].squeeze().to(DEVICE),
+                    labels=y.to(DEVICE)
+                )
+                output.loss.backward()
+                preds = torch.argmax(output.logits, dim=-1)
+                self.optimizer.step()
+                self.train_monitor.update(preds, y, output.loss)
+
+            self.train_monitor.emit(
+                epoch=epoch,
+                lr=self.optimizer.param_groups[0]['lr'],
+                time=time.time() - t,
+            )
+            torch.cuda.empty_cache()
+
+            valid_res = self.validate(epoch=epoch, mode='valid')
             self.lr_scheduler.step(valid_res['loss'])
 
         return self.model

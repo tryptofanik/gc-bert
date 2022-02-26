@@ -17,6 +17,9 @@ class Monitor:
         }
 
     def update(self, preds, labels, loss):
+        labels = labels.cpu()
+        preds = preds.detach().cpu()
+        loss = loss.detach().cpu()
         for metric in self.cls_metrics.values():
             metric.update(preds, labels)
         self.loss.update(loss)

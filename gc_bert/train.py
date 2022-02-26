@@ -1,21 +1,14 @@
 import argparse
 import os
-import time
-from functools import partial
 
-import numpy as np
 import torch
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, BertConfig
+from transformers import BertConfig
 
 from gc_bert import log
 from gc_bert.bert import BERT
 from gc_bert.dataset import PubmedDataset
-from gc_bert.gat.models import GAT, SpGAT
+from gc_bert.gat.models import SpGAT
 from gc_bert.gcn.models import GCN
-from gc_bert.utils import accuracy
 from gc_bert.trainer import BERTTrainer, GNNTrainer
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'

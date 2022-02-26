@@ -2,7 +2,6 @@ from functools import partial
 import time
 
 import torch
-import torch.nn.functional as F
 from torch.nn import BCEWithLogitsLoss, NLLLoss
 import torch.optim as optim
 from torch.utils.data import DataLoader

@@ -1,12 +1,11 @@
 import json
 
 import networkx as nx
-import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from gc_bert.utils import to_torch_sparse, split
+from gc_bert.utils import split
 
 
 class PubmedDataset(Dataset):

@@ -57,8 +57,7 @@ class BERT(BertPreTrainedModel):
         # take the state of [CLS] token representation
         last_hidden_state = outputs.last_hidden_state[:, 0, :]
 
-        last_hidden_state = self.dropout(last_hidden_state)
-        logits = self.classifier(last_hidden_state)
+        logits = self.classifier(self.dropout(last_hidden_state))
 
         if labels is not None:
             loss = self.loss_fct(logits, F.one_hot(labels, num_classes=self.config.num_labels).to(torch.float32))
@@ -70,7 +69,7 @@ class BERT(BertPreTrainedModel):
         return SequenceClassifierOutput(
             loss=loss,
             logits=logits,
-            hidden_states=outputs.hidden_states,
+            # hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            last_hidden_state=last_hidden_state,
         )
-

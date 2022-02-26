@@ -10,7 +10,7 @@ from gc_bert.utils import split
 
 class PubmedDataset(Dataset):
     
-    def __init__(self, data_path, citation_path, transform=None, target_transform=None):
+    def __init__(self, data_path, citation_path, transform=None, target_transform=None, return_idx=False):
         self.articles = None
         self.citations = None
         self.G = None
@@ -21,6 +21,7 @@ class PubmedDataset(Dataset):
         self.target_transform = target_transform
         self.mode = None
         self.mask = None
+        self.return_idx = return_idx
 
     def remove_disconnected_nodes(self):
         to_exclude = set(self.articles.index) - set(self.citations.target.astype(int)) - set(self.citations.source.astype(int))
@@ -79,6 +80,9 @@ class PubmedDataset(Dataset):
             self.mask = (self.articles['mode'] == mode).values
         else:
             raise Exception(f'Inproper mode {mode}')
+    
+    def set_return_idx(self, return_idx):
+        self.return_idx = return_idx
 
     def create_authors_list(self):
         self.authors = set.union(*[set(i) for i in self.articles.authors.tolist()])
@@ -116,6 +120,10 @@ class PubmedDataset(Dataset):
     def num_labels(self):
         return len(self.articles.label.unique())
 
+    @property
+    def real_len(self):
+        return len(self.articles)
+
     def __len__(self):
         if self.mode is None:
             return len(self.articles)
@@ -123,10 +131,13 @@ class PubmedDataset(Dataset):
             return len(self.articles.loc[self.mask])
 
     def __getitem__(self, idx):
-        text, label = self.articles.loc[
-            self.mask, ['abstract', 'label']].iloc[idx]
+        real_idx, text, label = self.articles.loc[
+            self.mask, ['abstract', 'label']].reset_index().iloc[idx]
         if self.transform:
             text = self.transform(text)
         if self.target_transform:
             label = self.target_transform(label)
-        return text, label
+        if self.return_idx:
+            return text, label, real_idx
+        else:
+            return text, label

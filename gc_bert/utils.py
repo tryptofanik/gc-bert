@@ -14,9 +14,9 @@ def to_torch_sparse(x):
 
     return torch.sparse.DoubleTensor(edge_index, val, torch.Size(coo.shape))
 
-def split(n):
-    train_idx, test_idx = train_test_split(np.arange(n), train_size=0.7)
-    valid_idx, test_idx = train_test_split(test_idx, train_size=1/3)
+def split(n, seed=1):
+    train_idx, test_idx = train_test_split(np.arange(n), train_size=0.7, random_state=seed)
+    valid_idx, test_idx = train_test_split(test_idx, train_size=1/3, random_state=seed)
 
     idx_train = np.zeros(n).astype(bool)
     idx_train[train_idx] = True

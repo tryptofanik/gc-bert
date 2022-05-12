@@ -1,6 +1,7 @@
 import json
 
 import networkx as nx
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
@@ -22,11 +23,18 @@ class PubmedDataset(Dataset):
         self.mode = None
         self.mask = None
         self.return_idx = return_idx
+        self.add_gc_token = False
 
     def remove_disconnected_nodes(self):
         to_exclude = set(self.articles.index) - set(self.citations.target.astype(int)) - set(self.citations.source.astype(int))
+        print(f'Excluding papers: {to_exclude}')
         self.articles = self.articles.loc[~self.articles.index.isin(to_exclude)]
-        self.pmid_to_id = {k:v for k,v in self.pmid_to_id.items() if v not in to_exclude}
+        idx_remap = dict(zip(self.articles.index.tolist(), range(len(self.articles))))
+        self.citations = self.citations.assign(
+            source=self.citations.source.map(idx_remap),
+            target=self.citations.target.map(idx_remap)
+        )
+        self.articles = self.articles.reset_index(drop=True)
 
     def clean_data(self):
         self.articles = (
@@ -41,7 +49,7 @@ class PubmedDataset(Dataset):
             .reset_index(drop=True)
             [['abstract', 'label', 'pmid', 'authors', 'title', 'time']]
         )
-        self.pmid_to_id = (
+        pmid_to_id = (
             self.articles
             .reset_index()
             .set_index('pmid')
@@ -55,8 +63,8 @@ class PubmedDataset(Dataset):
                 (self.citations.target.isin(self.articles.pmid)) &
                 (~self.citations.duplicated())]
             .assign(
-                source=self.citations.source.map(self.pmid_to_id),
-                target=self.citations.target.map(self.pmid_to_id),
+                source=self.citations.source.map(pmid_to_id),
+                target=self.citations.target.map(pmid_to_id),
             )
         )
         self.remove_disconnected_nodes()
@@ -81,9 +89,6 @@ class PubmedDataset(Dataset):
         else:
             raise Exception(f'Inproper mode {mode}')
     
-    def set_return_idx(self, return_idx):
-        self.return_idx = return_idx
-
     def create_authors_list(self):
         self.authors = set.union(*[set(i) for i in self.articles.authors.tolist()])
 
@@ -105,7 +110,9 @@ class PubmedDataset(Dataset):
             self.adj = nx.convert_matrix.to_numpy_array(
                 self.G, nodelist=self.articles.index.tolist()
             )
-        return self.adj 
+        self.edge_idx = torch.tensor(np.array(self.adj.nonzero()), dtype=torch.int64)
+        
+        return self.adj
 
     @property
     def labels(self):
@@ -133,6 +140,8 @@ class PubmedDataset(Dataset):
     def __getitem__(self, idx):
         real_idx, text, label = self.articles.loc[
             self.mask, ['abstract', 'label']].reset_index().iloc[idx]
+        if self.add_gc_token:
+            text = '<GC> ' + text
         if self.transform:
             text = self.transform(text)
         if self.target_transform:

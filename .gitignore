@@ -9,6 +9,12 @@ __pycache__/
 
 # others
 *__pychache__
+*.ipynb
+*tar.gz
+*txt
+*pt
+*bin
+events*
 
 # C extensions
 *.so
@@ -134,3 +140,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+pubmed/.DS_Store

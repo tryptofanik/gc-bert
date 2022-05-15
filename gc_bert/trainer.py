@@ -126,7 +126,7 @@ class GNNTrainer(Trainer):
         if self.dataset.adj is None:
             self.dataset.create_adj_matrix(to_sparse=True)
         self.X = vectorize_texts(
-            self.dataset.articles.abstract.tolist(), to_sparse=False
+            self.dataset.df.abstract.tolist(), to_sparse=False
         ).to(DEVICE)
         self.adj = to_torch_sparse(self.dataset.adj).to(DEVICE)
         self.edge_idx = self.dataset.edge_idx.to(DEVICE)

@@ -65,7 +65,7 @@ class BertGraphEmbeddings(nn.Module):
         if self.position_embedding_type == "absolute":
             position_embeddings = self.position_embeddings(position_ids)
             embeddings += position_embeddings
-        
+
         # add graph embeddings
         if graph_embeddings is not None:
             embeddings[:, 1, :] = graph_embeddings
@@ -89,6 +89,9 @@ class BERT(BertModel):
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = nn.Dropout(classifier_dropout)
+        self.graph_embedding_transformer = nn.Sequential(
+            nn.Linear(config.hidden_size, config.hidden_size)
+        )
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         self.loss_fct = BCEWithLogitsLoss()
 
@@ -171,6 +174,9 @@ class BERT(BertModel):
         # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+
+        if graph_embeddings is not None:
+            graph_embeddings = self.graph_embedding_transformer(graph_embeddings)
 
         embedding_output = self.embeddings(
             input_ids=input_ids,

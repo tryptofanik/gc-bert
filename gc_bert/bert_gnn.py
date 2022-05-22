@@ -80,7 +80,7 @@ class GCBERT(nn.Module):
     def __init__(self, bert_config, pretrained, n):
         super().__init__()
         self.bert = BERT(bert_config).from_pretrained(pretrained)
-        self.gnn = SAGE(
+        self.gnn = GCN2(
             nfeat=768,
             nhid=768,
             nclass=768,
@@ -99,13 +99,15 @@ class GCBERT(nn.Module):
             token_type_ids=E["token_type_ids"].squeeze().to(DEVICE),
             attention_mask=E["attention_mask"].squeeze().to(DEVICE),
         )
-        self.T[idx] = torch.clone(output['last_hidden_state'])
-        N_ = self.gnn(self.T, edge_idx)
-        if idx is not None:
-            self.N[idx] = N_[idx]
-        else:
-            self.N = nn.parameter.Parameter(N_, requires_grad=False)
+        # self.T[idx] = torch.clone(output['last_hidden_state'])
+
+        # N_ = self.gnn(self.T, edge_idx)
+        # if idx is not None:
+        #     self.N[idx] = N_[idx]
+        # else:
+        #     self.N = nn.parameter.Parameter(N_, requires_grad=False)
         # merge = torch.cat([N_[idx], self.T[idx]], 1)
-        merge = N_[idx] + self.T[idx]
+        # merge = N_[idx] + self.T[idx]
+        merge = output['last_hidden_state']
         logits = self.classifier(self.dropout(merge))
         return logits

@@ -2,11 +2,12 @@ import argparse
 import os
 
 import torch
+import torch.nn as nn
 from transformers import BertConfig
 
 from gc_bert import log
 from gc_bert.bert import BERT
-from gc_bert.dataset import PubmedDataset
+from gc_bert.dataset import PubmedDataset, WikiDataset
 from gc_bert.gat import GAT
 from gc_bert.gcn import GCN, GCN2
 from gc_bert.gin import GIN
@@ -21,20 +22,26 @@ logger = log.create_logger()
 
 def main(args):
     
-    os.makedirs(args.save_dir, exist_ok=True)
-    log.add_file_handler(logger, args.save_dir)
+    os.makedirs(os.path.join(args.save_dir, args.run_name), exist_ok=True)
+    log.add_file_handler(logger, os.path.join(args.save_dir, args.run_name))
     logger.info(f'Parameters of run: {args}')
 
     if args.dataset == 'pubmed':
         dataset = PubmedDataset('pubmed/data/articles.json', 'pubmed/data/citations.csv')
         dataset.load_data()
+    elif args.dataset == 'wiki':
+        dataset = WikiDataset(
+            data_path='dbpedia/data/',
+            citation_path='dbpedia/links.json',
+        )
+        dataset.load_data()
     else:
         raise Exception('No dataset was chosen.')
     
     if args.model == 'gcn':
-        model = GCN(
+        model = GCN2(
             nfeat=512,
-            nhid=256,
+            nhid=768,
             nclass=3,
             dropout=0
         ).to(DEVICE)
@@ -49,7 +56,7 @@ def main(args):
 #             alpha=0.2,
             nheads=8
         ).to(DEVICE)
-        trainer = GNNTrainer(model, dataset, logger, lr=0.001)
+        trainer = GNNTrainer(model, dataset, logger, lr=0.001, run_name=args.run_name)
     
     elif args.model == 'gin':
         model = GIN(
@@ -58,7 +65,7 @@ def main(args):
             nout=3,
             dropout=0.5, 
         ).to(DEVICE)
-        trainer = GNNTrainer(model, dataset, logger, lr=0.001)
+        trainer = GNNTrainer(model, dataset, logger, lr=0.001, run_name=args.run_name)
 
     elif 'bert' in args.model:
         config = BertConfig(num_labels=len(dataset.labels.unique()))
@@ -66,28 +73,28 @@ def main(args):
 
         if args.model == 'bert':
             model = BERT(config).from_pretrained(model_source, config=config).to(DEVICE)
-            trainer = BERTTrainer(model, dataset, logger)
+            trainer = BERTTrainer(model, dataset, logger, run_name=args.run_name)
 
         elif args.model == 'bert-gcn':
             model = ComposedGraphBERT(config, model_source, dataset.real_len).to(DEVICE)
-            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.0001)
+            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.0001, run_name=args.run_name)
 
         elif args.model == 'bert-gcn-par':
             model = ParallelGraphBERT(config, model_source, dataset.real_len).to(DEVICE)
-            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.0001)
+            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.0001, run_name=args.run_name)
         
         elif args.model == 'gcbert':
             model = GCBERT(config, model_source, dataset.real_len).to(DEVICE)
-            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.00005)
+            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.00005, run_name=args.run_name)
 
     trainer.train(args.epochs)
     
     if args.model != 'bert':
-        with open(os.path.join(args.save_dir, args.run_name + '.pt'), 'wb') as f:
+        with open(os.path.join(args.save_dir, args.run_name, 'model_end_of_training.pt'), 'wb') as f:
             torch.save(model.state_dict(), f)
     else:
-        model.save_pretrained(os.path.join(args.save_dir, args.run_name))
-    dataset.articles.to_csv(os.path.join(args.save_dir, 'data.csv'))
+        model.save_pretrained(os.path.join(args.save_dir, args.run_name, 'model_end_of_training.pt'))
+    dataset.df.to_csv(os.path.join(args.save_dir, args.run_name, 'data.csv'))
 
 
 if __name__ == '__main__':

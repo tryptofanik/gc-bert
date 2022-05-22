@@ -25,7 +25,7 @@ class GCN2(nn.Module):
 
         self.gc1 = GCNConv(nfeat, nhid, aggr='add')
         self.gc2 = GCNConv(nhid, nhid, aggr='add')
-        self.linear = nn.Linear(nhid, nclass)
+        self.classifier = nn.Linear(nhid, nclass)
         self.dropout = dropout
 
     def forward(self, x, edge_idx):
@@ -35,5 +35,12 @@ class GCN2(nn.Module):
         x = self.gc2(x, edge_idx)
         x = F.relu(x)
         x = F.dropout(x, self.dropout, training=self.training)
-        x = self.linear(x)
+        x = self.classifier(x)
         return F.log_softmax(x, dim=1)
+
+    def forward_state(self, x, edge_idx):
+        x = self.gc1(x, edge_idx)
+        x = F.relu(x)
+        x = F.dropout(x, self.dropout, training=self.training)
+        x = self.gc2(x, edge_idx)
+        return x

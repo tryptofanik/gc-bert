@@ -1,6 +1,7 @@
 from functools import partial
 import time
 import os
+import pickle
 
 from tqdm import tqdm
 import torch
@@ -109,8 +110,9 @@ class Trainer:
         return self.model
 
     def save(self, suffix = ''):
-        with open(os.path.join(self.save_dir, self.run_name + suffix + '.pt'), 'wb') as f:
+        with open(os.path.join(self.save_dir, self.run_name, 'model_' + suffix + '.pt'), 'wb') as f:
             torch.save(self.model.state_dict(), f)
+
 
 class GNNTrainer(Trainer):
     def __init__(
@@ -126,7 +128,7 @@ class GNNTrainer(Trainer):
         if self.dataset.adj is None:
             self.dataset.create_adj_matrix(to_sparse=True)
         self.X = vectorize_texts(
-            self.dataset.df.abstract.tolist(), to_sparse=False
+            self.dataset.df.text.tolist(), to_sparse=False
         ).to(DEVICE)
         self.adj = to_torch_sparse(self.dataset.adj).to(DEVICE)
         self.edge_idx = self.dataset.edge_idx.to(DEVICE)
@@ -282,8 +284,9 @@ class ComposedGraphBERTTrainer(Trainer):
         weight_decay=0.01,
         loss_fun=BCEWithLogitsLoss(reduction="none"),
         freeze_bert=False,
+        **kwargs
     ):
-        super().__init__(model, dataset, logger, lr, weight_decay, loss_fun)
+        super().__init__(model, dataset, logger, lr, weight_decay, loss_fun, **kwargs)
         self.adj = None
         self.X = None
         self.tokenizer = None
@@ -301,8 +304,16 @@ class ComposedGraphBERTTrainer(Trainer):
                     self.model.T[idx, :] = output['last_hidden_state']
 
     def fill_node_repr(self):
-        with torch.no_grad():
-            self.model.N = nn.parameter.Parameter(self.model.gnn(self.model.T, self.edge_idx), requires_grad=False)
+        # with torch.no_grad():
+        #     self.model.N = nn.parameter.Parameter(self.model.gnn(self.model.T, self.edge_idx), requires_grad=False)
+        with open('graph_embeddings.pkl', 'rb') as f:
+            N = torch.tensor(pickle.load(f)).to(DEVICE)
+        # RANDOM PERMUTATION FOR TEST
+        # N = N[torch.randperm(len(N))]
+        self.model.N = nn.parameter.Parameter(N, requires_grad=False)
+        # self.model.N = nn.parameter.Parameter(
+        #     torch.rand_like(self.model.N, device='cuda'), requires_grad=False
+        # )
 
     def prepare(self):
         super().prepare()
@@ -311,7 +322,7 @@ class ComposedGraphBERTTrainer(Trainer):
         if self.dataset.adj is None:
             self.dataset.create_adj_matrix(to_sparse=True)
         self.X = vectorize_texts(
-            self.dataset.articles.abstract.tolist(), to_sparse=False
+            self.dataset.df.text.tolist(), to_sparse=False
         ).to(DEVICE)
         self.adj = to_torch_sparse(self.dataset.adj).to(DEVICE)
         self.edge_idx = self.dataset.edge_idx.to(DEVICE)
@@ -391,7 +402,6 @@ class ComposedGraphBERTTrainer(Trainer):
                 best_val_acc = valid_res['acc']
                 self.save(suffix=f'_epoch={epoch}')
                 self.validate(mode='test', epoch=epoch)
-
         
         self.validate(mode='test', epoch=epoch)
         return self.model

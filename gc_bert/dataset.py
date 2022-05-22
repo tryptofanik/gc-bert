@@ -1,3 +1,4 @@
+from glob import glob
 import json
 
 import networkx as nx
@@ -28,7 +29,7 @@ class TextGraphDataset(Dataset):
     
     def remove_disconnected_nodes(self):
         to_exclude = set(self.df.index) - set(self.edges.target.astype(int)) - set(self.edges.source.astype(int))
-        print(f'Excluding documents: {to_exclude}')
+        print(f'Excluding {len(to_exclude)} documents.')
         self.df = self.df.loc[~self.df.index.isin(to_exclude)]
         idx_remap = dict(zip(self.df.index.tolist(), range(len(self.df))))
         self.edges = self.edges.assign(
@@ -36,13 +37,6 @@ class TextGraphDataset(Dataset):
             target=self.edges.target.map(idx_remap)
         )
         self.df = self.df.reset_index(drop=True)
-
-    def load_data(self):
-        with open(self.path) as f:
-            self.df = pd.DataFrame(json.load(f))
-        self.edges = pd.read_csv(self.citation_path)
-        self.clean_data()
-        self.split_data()
 
     def split_data(self):
         idx_train, idx_valid, idx_test = split(self.df.shape[0], self.split_seed)
@@ -118,6 +112,13 @@ class TextGraphDataset(Dataset):
 
 class PubmedDataset(TextGraphDataset):
 
+    def load_data(self):
+        with open(self.path) as f:
+            self.df = pd.DataFrame(json.load(f))
+        self.edges = pd.read_csv(self.citation_path)
+        self.clean_data()
+        self.split_data()
+
     def clean_data(self):
         self.df = (
             self.df
@@ -155,3 +156,45 @@ class PubmedDataset(TextGraphDataset):
     def create_authors_list(self):
         self.authors = set.union(*[set(i) for i in self.df.authors.tolist()])
 
+
+
+class WikiDataset(TextGraphDataset):
+
+    def clean_data(self):
+        pass
+
+    def load_edges(self):
+        with open(self.citation_path, 'r') as f:
+            data = json.load(f)
+        links = []
+        for article, art_links in data.items():
+            links.extend([article, link] for link in art_links)
+
+        links = pd.DataFrame(links, columns=['source', 'target'])
+        title_to_id = self.df.set_index('title')['text_id'].to_dict()
+        self.edges = (
+            links
+            .assign(
+                source=links.source.map(title_to_id),
+                target=links.target.map(title_to_id)
+            )
+        )
+
+    def load_data(self):
+        train = pd.read_csv(
+            'dbpedia/train.csv', names=['label', 'title', 'text']
+        ).assign(mode='train')
+        test = pd.read_csv(
+            'dbpedia/test.csv', names=['label', 'title', 'text']
+        ).assign(mode='test')
+        self.df = (
+            pd.concat([train, test])
+            .reset_index(drop=True)
+            .reset_index()
+            .rename(columns={'index': 'text_id'})
+        )
+        self.load_edges()
+        # self.df = self.df.loc[
+        #     self.df.text_id.isin(set(self.edges.source) | set(self.edges.target))
+        # ].reset_index(drop=True)
+        self.remove_disconnected_nodes()

@@ -68,7 +68,7 @@ class BertGraphEmbeddings(nn.Module):
 
         # add graph embeddings
         if graph_embeddings is not None:
-            embeddings[:, 1, :] = graph_embeddings
+            embeddings[:, 1, :] += graph_embeddings
         #     embeddings += graph_embeddings
 
         embeddings = self.LayerNorm(embeddings)

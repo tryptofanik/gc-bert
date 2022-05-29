@@ -95,7 +95,33 @@ dataset.change_mode('train')
 ```
 
 
+# How to run?
 
+At first you need to have proper Python3 environment with torch. You should run 
+
+```
+pip install -r requirements.txt
+pip install -e .
+```
+
+All the necessary data for pubmed are stored `pubmed/data/` directory. Before running the traiing you should unpack the tar archive with this command:
+
+```
+tar -xvf pubmed/data/articles.json.tar.gz 
+```
+
+
+The main script for running the project is contained in the `train.py` file that can be launched from the CLI. There are several arguments that can be specifed: 
+
+- `dataset`: you can choose the dataset you like, currently only pubmed is available
+- `model`: model you want to train (one of `gcn`, `gat`, `gin`, `bert`, `bert-gcn`, `gcbert`)
+- `model-load-path`: path to the model weights that you want to load
+- `run-name`: name of the run; it will be used when you save the model
+- `save-dir`: top-level directory in which results and the model should be saved
+
+For all args just type `python train.py -h`.
+
+If you want to adjust some hyperparameters, like feature space of GNNs just chenage them in `train.py`. In case of some design changes in LM+GNN models you will need to modify the class of the model.
 
 
 

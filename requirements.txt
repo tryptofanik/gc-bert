@@ -1,0 +1,12 @@
+# base
+pandas
+numpy
+networkx
+tqdm
+sklearn
+
+# DL
+torch
+torchmetrics
+torch_geometric
+transformers

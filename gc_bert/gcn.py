@@ -2,6 +2,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
+"""
+https://arxiv.org/abs/1609.02907
+"""
+
 
 class GCN(nn.Module):
     def __init__(self, nfeat, nhid, nclass, dropout):

@@ -10,6 +10,10 @@ from torch.utils.data import Dataset
 from gc_bert.utils import split
 
 
+"""
+https://paperswithcode.com/dataset/pubmed
+"""
+
 class TextGraphDataset(Dataset):
 
     def __init__(self, data_path, citation_path, transform=None, target_transform=None, return_idx=False, split_seed=1):

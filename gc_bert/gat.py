@@ -2,6 +2,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv
 
+"""
+https://arxiv.org/abs/1710.10903
+"""
+
 
 class GAT(nn.Module):
     def __init__(self, nfeat, nhid, nclass, dropout, nheads=8):

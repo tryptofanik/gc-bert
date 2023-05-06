@@ -10,6 +10,13 @@ from transformers.models.bert.modeling_bert import (BertModel,
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
+"""
+BERT paper: https://arxiv.org/abs/1810.04805
+Implementation from HuggingFace (https://huggingface.co/models) changed to include graph_embeddings
+as an input into the model.
+"""
+
+
 class BertGraphEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings."""
 
@@ -66,10 +73,10 @@ class BertGraphEmbeddings(nn.Module):
             position_embeddings = self.position_embeddings(position_ids)
             embeddings += position_embeddings
 
-        # add graph embeddings
+        # add graph embedding
         if graph_embeddings is not None:
             embeddings[:, 1, :] += graph_embeddings
-        #     embeddings += graph_embeddings
+        #     embeddings += graph_embeddings  # second approach is to add node repr. to all tokens but it does not work well
 
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)

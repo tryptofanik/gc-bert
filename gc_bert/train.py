@@ -12,7 +12,7 @@ from gc_bert.gat import GAT
 from gc_bert.gcn import GCN, GCN2
 from gc_bert.gin import GIN
 from gc_bert.bert_gnn import ComposedGraphBERT, ParallelGraphBERT, GCBERT
-from gc_bert.trainer import BERTTrainer, GNNTrainer, ComposedGraphBERTTrainer
+from gc_bert.trainer import BERTTrainer, GNNTrainer, GraphBERTTrainer
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BERT_MODEL_NAME = 'bert-base-uncased'
@@ -26,6 +26,8 @@ def main(args):
     log.add_file_handler(logger, os.path.join(args.save_dir, args.run_name))
     logger.info(f'Parameters of run: {args}')
 
+    # here, we are choose the dataset to work on; currently only pubmed is operational
+    # due to problems with wikipedia data integrity
     if args.dataset == 'pubmed':
         dataset = PubmedDataset('pubmed/data/articles.json', 'pubmed/data/citations.csv')
         dataset.load_data()
@@ -38,6 +40,8 @@ def main(args):
     else:
         raise Exception('No dataset was chosen.')
     
+    # choose model and the coresponding trainer
+
     if args.model == 'gcn':
         model = GCN2(
             nfeat=512,
@@ -77,15 +81,15 @@ def main(args):
 
         elif args.model == 'bert-gcn':
             model = ComposedGraphBERT(config, model_source, dataset.real_len).to(DEVICE)
-            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.0001, run_name=args.run_name)
+            trainer = GraphBERTTrainer(model, dataset, logger, lr=0.0001, run_name=args.run_name)
 
         elif args.model == 'bert-gcn-par':
             model = ParallelGraphBERT(config, model_source, dataset.real_len).to(DEVICE)
-            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.0001, run_name=args.run_name)
+            trainer = GraphBERTTrainer(model, dataset, logger, lr=0.0001, run_name=args.run_name)
         
         elif args.model == 'gcbert':
             model = GCBERT(config, model_source, dataset.real_len).to(DEVICE)
-            trainer = ComposedGraphBERTTrainer(model, dataset, logger, lr=0.00005, run_name=args.run_name)
+            trainer = GraphBERTTrainer(model, dataset, logger, lr=0.00005, run_name=args.run_name)
 
     trainer.train(args.epochs)
     

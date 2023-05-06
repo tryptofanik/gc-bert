@@ -3,6 +3,11 @@ import torch.nn.functional as F
 from torch.nn import Sequential, Linear, BatchNorm1d, ReLU, Dropout
 from torch_geometric.nn import GINConv
 
+"""
+https://arxiv.org/abs/1810.00826
+"""
+
+
 class GIN(torch.nn.Module):
     def __init__(self, nfeat, nhid, nclass, dropout):
         super().__init__()

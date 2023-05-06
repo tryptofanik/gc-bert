@@ -274,7 +274,7 @@ class BERTTrainer(Trainer):
         return self.model
 
 
-class ComposedGraphBERTTrainer(Trainer):
+class GraphBERTTrainer(Trainer):
     def __init__(
         self,
         model,
@@ -304,13 +304,18 @@ class ComposedGraphBERTTrainer(Trainer):
                     self.model.T[idx, :] = output['last_hidden_state']
 
     def fill_node_repr(self):
-        # with torch.no_grad():
-        #     self.model.N = nn.parameter.Parameter(self.model.gnn(self.model.T, self.edge_idx), requires_grad=False)
-        with open('graph_embeddings.pkl', 'rb') as f:
-            N = torch.tensor(pickle.load(f)).to(DEVICE)
-        # RANDOM PERMUTATION FOR TEST
-        # N = N[torch.randperm(len(N))]
-        self.model.N = nn.parameter.Parameter(N, requires_grad=False)
+        # precalculate N using GNN
+        with torch.no_grad():
+            self.model.N = nn.parameter.Parameter(self.model.gnn(self.model.T, self.edge_idx), requires_grad=False)
+
+        # OR if you have precalculated graph_embeddings you can load it here
+        # with open('graph_embeddings.pkl', 'rb') as f:
+        #     N = torch.tensor(pickle.load(f)).to(DEVICE)
+
+        # OR just define N
+        # self.model.N = nn.parameter.Parameter(N, requires_grad=False)
+
+        # OR create random N
         # self.model.N = nn.parameter.Parameter(
         #     torch.rand_like(self.model.N, device='cuda'), requires_grad=False
         # )
@@ -366,17 +371,15 @@ class ComposedGraphBERTTrainer(Trainer):
         self.prepare()
         best_val_acc = 0
 
-        # if self.freeze_bert:
-        #     for param in self.model.bert.parameters():
-        #         param.requires_grad = False
+        if self.freeze_bert:
+            for param in self.model.bert.parameters():
+                param.requires_grad = False
 
         for epoch in range(epochs):
             t = time.time()
             self.model.train()
             self.dataset.change_mode("train")
             for i, (E, y, idx) in tqdm(enumerate(self.get_dataloader(mode="train"))):
-                if i == 100:
-                    break
                 self.optimizer.zero_grad()
                 logits = self.model(E, self.edge_idx, idx)
                 loss = self.loss_fun(

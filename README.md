@@ -35,7 +35,6 @@ Graph Neural Networks are powerful models capable of utilization of graph inform
 
 - Graph Convolutional Network (GCN)
 - Graph Attention Network (GAT)
-- GraphSAGE
 - Graph Isomorphism Network (GIN)
 
 ## Language Model (LM)
@@ -123,5 +122,30 @@ For all args just type `python train.py -h`.
 
 If you want to adjust some hyperparameters, like feature space of GNNs just chenage them in `train.py`. In case of some design changes in LM+GNN models you will need to modify the class of the model.
 
+
+## Hyperparameters 
+
+In most experiments we used default hyperparameters normally used for selected models.
+Here is a list of most important hyperparameters used in this work:
+
+- learning rate - 0.001 for GNNs if trained alone; 0.0001 for late fusion and compositional models; 0.00005 for early fusion and looped early fusion; normaly for GNN it is enough to start with higher lr as these models are smaller and do not loose stability after applying stronger lr. For more complicated models lower lr was chosen in order to train more carefully
+- weight_decay - 0.01 for all experiments
+- GCN hps: 
+    - input dim: 512 -> enforced by BERT output size
+    - hidden dim: 768; higher values like 1024 and 2048 in intial experiments did not showed significantly better results
+    - num of layers: 2
+    - dropout: 0
+- tokenizer window max size: 512
+- max epoches: 1000 - normally it was large enough for model to reach plateu
+
+
+## Seeds
+
+For dataset splits generation we used following seeds: {1, 2, ..., 10} (see function `gc_bert.utils.split`). 
+
+## GPU infrastructre
+
+For all experiemtns we used [HPC infrastrucres](https://hpc.mini.pw.edu.pl/) provided by Faculty of Mathematics and Information Sciences and Laboratory of Bioinformatics and Computational Genomics (Warsaw University of Technology). 
+Infrastructre comprises of NVIDIA DGX A100 GPUs. 
 
 
